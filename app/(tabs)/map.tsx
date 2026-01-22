@@ -1,6 +1,7 @@
 import * as Location from "expo-location";
 import React, { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Keyboard,
   ScrollView,
@@ -11,6 +12,7 @@ import {
   View,
 } from "react-native";
 import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
+// Actually process.env.EXPO_PUBLIC_... works in Expo.
 
 interface Venue {
   id: string;
@@ -21,7 +23,8 @@ interface Venue {
   rating: number;
   hasBidet: boolean;
   tpQuality: number;
-  type: "public" | "cafe" | "mall" | "hotel";
+  type: string;
+  source: "google" | "supabase";
 }
 
 export default function MapScreen() {
@@ -31,66 +34,10 @@ export default function MapScreen() {
   );
   const [activeTab, setActiveTab] = useState<"map" | "list">("map");
   const [filteredVenues, setFilteredVenues] = useState<Venue[]>([]);
+  const [loading, setLoading] = useState(false);
   const mapRef = useRef<MapView>(null);
 
-  // Simulated toilet database
-  const allVenues: Venue[] = [
-    {
-      id: "1",
-      name: "Starbucks Reserve",
-      address: "123 Coffee Lane",
-      latitude: 1.3521,
-      longitude: 103.8198,
-      rating: 4.5,
-      hasBidet: false,
-      tpQuality: 4,
-      type: "cafe",
-    },
-    {
-      id: "2",
-      name: "Marina Bay Sands",
-      address: "10 Bayfront Ave",
-      latitude: 1.2834,
-      longitude: 103.8607,
-      rating: 4.8,
-      hasBidet: true,
-      tpQuality: 5,
-      type: "hotel",
-    },
-    {
-      id: "3",
-      name: "VivoCity Mall",
-      address: "1 HarbourFront Walk",
-      latitude: 1.2642,
-      longitude: 103.8226,
-      rating: 4.2,
-      hasBidet: true,
-      tpQuality: 4,
-      type: "mall",
-    },
-    {
-      id: "4",
-      name: "Public Restroom (Park)",
-      address: "East Coast Park",
-      latitude: 1.3,
-      longitude: 103.9,
-      rating: 3.2,
-      hasBidet: false,
-      tpQuality: 2,
-      type: "public",
-    },
-    {
-      id: "5",
-      name: "ION Orchard",
-      address: "2 Orchard Turn",
-      latitude: 1.304,
-      longitude: 103.832,
-      rating: 4.9,
-      hasBidet: true,
-      tpQuality: 5,
-      type: "mall",
-    },
-  ];
+  const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
 
   useEffect(() => {
     (async () => {
@@ -106,7 +53,7 @@ export default function MapScreen() {
       let userLocation = await Location.getCurrentPositionAsync({});
       setLocation(userLocation);
 
-      // Initial center on user
+      // Center map initially
       if (mapRef.current) {
         mapRef.current.animateToRegion({
           latitude: userLocation.coords.latitude,
@@ -115,74 +62,136 @@ export default function MapScreen() {
           longitudeDelta: 0.05,
         });
       }
-    })();
 
-    // Initially show all venues
-    setFilteredVenues(allVenues);
+      // Initial search for toilets near user
+      searchPlaces(
+        "public toilet",
+        userLocation.coords.latitude,
+        userLocation.coords.longitude,
+      );
+    })();
   }, []);
 
-  const handleSearch = () => {
-    Keyboard.dismiss();
-    if (!searchQuery.trim()) {
-      setFilteredVenues(allVenues);
+  const searchPlaces = async (query: string, lat: number, lng: number) => {
+    if (!GOOGLE_API_KEY) {
+      Alert.alert("Configuration Error", "Google Maps API Key is missing.");
       return;
     }
 
-    // Simulate searching for "toilets near [location]"
-    const filtered = allVenues.filter(
-      (v) =>
-        v.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        v.address.toLowerCase().includes(searchQuery.toLowerCase()),
-    );
+    setLoading(true);
+    try {
+      // Use Google Places API Text Search
+      // Radius 5km = 5000m
+      const url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&location=${lat},${lng}&radius=5000&key=${GOOGLE_API_KEY}`;
 
-    setFilteredVenues(filtered);
+      const response = await fetch(url);
+      const data = await response.json();
 
-    if (filtered.length > 0 && mapRef.current) {
-      // Center on first result
-      mapRef.current.animateToRegion({
-        latitude: filtered[0].latitude,
-        longitude: filtered[0].longitude,
-        latitudeDelta: 0.02,
-        longitudeDelta: 0.02,
-      });
-    } else {
-      Alert.alert(
-        "No toilets found",
-        "Try searching for a different location.",
-      );
+      if (data.status === "OK" && data.results) {
+        const venues: Venue[] = data.results.map((place: any) => ({
+          id: place.place_id,
+          name: place.name,
+          address: place.formatted_address,
+          latitude: place.geometry.location.lat,
+          longitude: place.geometry.location.lng,
+          rating: place.rating || 0,
+          hasBidet: false, // Google doesn't know this, defaults to false
+          tpQuality: 0, // Google doesn't know this
+          type: place.types.includes("shopping_mall")
+            ? "mall"
+            : place.types.includes("cafe")
+              ? "cafe"
+              : place.types.includes("restaurant")
+                ? "restaurant"
+                : "public",
+          source: "google",
+        }));
+
+        setFilteredVenues(venues);
+
+        // Fit map to results
+        if (venues.length > 0 && mapRef.current) {
+          mapRef.current.fitToCoordinates(
+            venues.map((v) => ({
+              latitude: v.latitude,
+              longitude: v.longitude,
+            })),
+            {
+              edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
+              animated: true,
+            },
+          );
+        }
+      } else {
+        setFilteredVenues([]);
+        if (data.status === "ZERO_RESULTS") {
+          Alert.alert("No results", "No toilets found in this area.");
+        } else {
+          console.error(
+            "Google Places Error:",
+            data.status,
+            data.error_message,
+          );
+        }
+      }
+    } catch (error) {
+      console.error("Fetch error:", error);
+      Alert.alert("Error", "Failed to fetch places.");
+    } finally {
+      setLoading(false);
     }
   };
 
-  const centerOnUser = async () => {
-    if (!location) {
+  const handleSearch = async () => {
+    Keyboard.dismiss();
+    const query = searchQuery.trim() || "public toilet";
+
+    // If we have location, use it to bias results
+    if (location) {
+      searchPlaces(query, location.coords.latitude, location.coords.longitude);
+    } else {
+      // No location, just search (results might be anywhere, bias not applied strongly)
+      // Or request location again
       let { status } = await Location.requestForegroundPermissionsAsync();
       if (status === "granted") {
         let userLocation = await Location.getCurrentPositionAsync({});
         setLocation(userLocation);
-      } else {
-        return;
+        searchPlaces(
+          query,
+          userLocation.coords.latitude,
+          userLocation.coords.longitude,
+        );
       }
     }
+  };
 
-    if (location && mapRef.current) {
+  const centerOnUser = async () => {
+    let userLocation = location;
+    if (!userLocation) {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") return;
+      userLocation = await Location.getCurrentPositionAsync({});
+      setLocation(userLocation);
+    }
+
+    if (userLocation && mapRef.current) {
       mapRef.current.animateToRegion({
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
+        latitude: userLocation.coords.latitude,
+        longitude: userLocation.coords.longitude,
         latitudeDelta: 0.01,
         longitudeDelta: 0.01,
       });
+      // Also research near user when recentering?
+      searchPlaces(
+        "public toilet",
+        userLocation.coords.latitude,
+        userLocation.coords.longitude,
+      );
     }
   };
 
   const renderTPQuality = (quality: number) => {
     return "🧻".repeat(quality) + "⬜".repeat(5 - quality);
-  };
-
-  const initialRegion = {
-    latitude: 1.3521,
-    longitude: 103.8198,
-    latitudeDelta: 0.0922,
-    longitudeDelta: 0.0421,
   };
 
   return (
@@ -192,7 +201,7 @@ export default function MapScreen() {
         <View style={styles.searchRow}>
           <TextInput
             style={styles.searchInput}
-            placeholder="🔍 Find toilets near..."
+            placeholder="🔍 Find toilets (e.g. 'malls')..."
             placeholderTextColor="#8B7355"
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -235,13 +244,18 @@ export default function MapScreen() {
         </TouchableOpacity>
       </View>
 
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color="#8B5A2B" />
+        </View>
+      )}
+
       {activeTab === "map" ? (
         <View style={styles.mapContainer}>
           <MapView
             ref={mapRef}
             provider={PROVIDER_GOOGLE}
             style={styles.map}
-            initialRegion={initialRegion}
             showsUserLocation={true}
             showsMyLocationButton={false}
           >
@@ -253,69 +267,50 @@ export default function MapScreen() {
                   longitude: venue.longitude,
                 }}
                 title={venue.name}
-                description={`⭐ ${venue.rating} • ${venue.hasBidet ? "Bidet" : "No Bidet"}`}
-                pinColor={venue.hasBidet ? "blue" : "red"}
+                description={`⭐ ${venue.rating} • ${venue.address}`}
+                pinColor={"red"} // Google results don't have bidet info yet
               />
             ))}
           </MapView>
 
-          {/* Recenter Button */}
           <TouchableOpacity
             style={styles.recenterButton}
             onPress={centerOnUser}
           >
             <Text style={styles.recenterText}>📍 Near Me</Text>
           </TouchableOpacity>
-
-          {/* Legend Overlay */}
-          <View style={styles.legendOverlay}>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: "blue" }]} />
-              <Text style={styles.legendText}>Has Bidet</Text>
-            </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: "red" }]} />
-              <Text style={styles.legendText}>Standard</Text>
-            </View>
-          </View>
         </View>
       ) : (
         <ScrollView style={styles.listContent}>
           {filteredVenues.length === 0 ? (
             <Text style={styles.emptyText}>
-              No toilets found matching your search.
+              No venues found. Try a different search.
             </Text>
           ) : (
             filteredVenues.map((venue) => (
               <TouchableOpacity key={venue.id} style={styles.venueCard}>
                 <View style={styles.venueHeader}>
-                  <View>
+                  <View style={{ flex: 1 }}>
                     <Text style={styles.venueName}>{venue.name}</Text>
                     <Text style={styles.venueAddress}>{venue.address}</Text>
                     <Text style={styles.venueType}>
                       {venue.type.toUpperCase()}
                     </Text>
                   </View>
-                  <View style={styles.venueRating}>
-                    <Text style={styles.ratingText}>⭐ {venue.rating}</Text>
-                  </View>
+                  {venue.rating > 0 && (
+                    <View style={styles.venueRating}>
+                      <Text style={styles.ratingText}>⭐ {venue.rating}</Text>
+                    </View>
+                  )}
                 </View>
 
+                {/* For Google results, we don't have this data yet, maybe hide or show 'Unknown' */}
                 <View style={styles.venueDetails}>
                   <View
-                    style={[
-                      styles.bidetBadge,
-                      venue.hasBidet && styles.bidetBadgeActive,
-                    ]}
+                    style={[styles.bidetBadge, { backgroundColor: "#F5F5F5" }]}
                   >
-                    <Text style={styles.bidetText}>
-                      {venue.hasBidet ? "💦 Bidet Available" : "🚫 No Bidet"}
-                    </Text>
-                  </View>
-                  <View style={styles.tpQuality}>
-                    <Text style={styles.tpLabel}>TP: </Text>
-                    <Text style={styles.tpRating}>
-                      {renderTPQuality(venue.tpQuality)}
+                    <Text style={[styles.bidetText, { color: "#888" }]}>
+                      ❓ Bidet status unknown
                     </Text>
                   </View>
                 </View>
@@ -401,6 +396,14 @@ const styles = StyleSheet.create({
   tabTextActive: {
     color: "white",
   },
+  loadingOverlay: {
+    position: "absolute",
+    top: 200,
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    alignItems: "center",
+  },
   mapContainer: {
     flex: 1,
     overflow: "hidden",
@@ -415,7 +418,7 @@ const styles = StyleSheet.create({
   },
   recenterButton: {
     position: "absolute",
-    bottom: 90,
+    bottom: 40,
     right: 16,
     backgroundColor: "white",
     paddingVertical: 12,
@@ -430,32 +433,6 @@ const styles = StyleSheet.create({
   recenterText: {
     fontWeight: "bold",
     color: "#8B5A2B",
-  },
-  legendOverlay: {
-    position: "absolute",
-    bottom: 24,
-    right: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.9)",
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#E8DDD4",
-  },
-  legendItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 4,
-  },
-  legendDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginRight: 6,
-  },
-  legendText: {
-    fontSize: 12,
-    color: "#4A3728",
-    fontWeight: "600",
   },
   listContent: {
     flex: 1,
@@ -489,6 +466,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#8B7355",
     marginTop: 2,
+    marginBottom: 4,
   },
   venueType: {
     fontSize: 10,
@@ -523,24 +501,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
-    backgroundColor: "#FFEBEE",
-  },
-  bidetBadgeActive: {
-    backgroundColor: "#E3F2FD",
   },
   bidetText: {
     fontSize: 12,
     fontWeight: "500",
-  },
-  tpQuality: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  tpLabel: {
-    fontSize: 13,
-    color: "#8B7355",
-  },
-  tpRating: {
-    fontSize: 12,
   },
 });

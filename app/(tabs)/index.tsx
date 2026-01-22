@@ -1,6 +1,7 @@
 import { PanicButton } from "@/components/PanicButton";
+import { supabase } from "@/lib/supabase";
 import { useRouter } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   RefreshControl,
   ScrollView,
@@ -17,15 +18,100 @@ export default function HomeScreen() {
   const [streak, setStreak] = useState(0);
   const [todayLogs, setTodayLogs] = useState(0);
 
+  // Quick stats state
+  const [totalTime, setTotalTime] = useState(0);
+  const [avgBristol, setAvgBristol] = useState("-");
+  const [achievementCount, setAchievementCount] = useState(0);
+  const [venuesRated, setVenuesRated] = useState(0);
+
+  const fetchData = async () => {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // 1. Fetch Streak
+      const { data: streakData } = await supabase
+        .from("streaks")
+        .select("current_streak")
+        .eq("user_id", user.id)
+        .single();
+      if (streakData) setStreak(streakData.current_streak);
+
+      // 2. Fetch Today's Logs
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+
+      const { count: todayCount } = await supabase
+        .from("poop_logs")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .gte("logged_at", startOfDay.toISOString());
+      setTodayLogs(todayCount || 0);
+
+      // 3. Fetch Quick Stats
+      // Total Time
+      const { data: logs } = await supabase
+        .from("poop_logs")
+        .select("duration_seconds, bristol_type")
+        .eq("user_id", user.id);
+
+      if (logs) {
+        const total = logs.reduce(
+          (sum, log) => sum + (log.duration_seconds || 0),
+          0,
+        );
+        setTotalTime(total);
+
+        // Avg Bristol
+        const avg =
+          logs.length > 0
+            ? (
+                logs.reduce((sum, log) => sum + (log.bristol_type || 0), 0) /
+                logs.length
+              ).toFixed(1)
+            : "-";
+        setAvgBristol(avg.toString());
+      }
+
+      // Achievement Count
+      const { count: achCount } = await supabase
+        .from("user_achievements")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id);
+      setAchievementCount(achCount || 0);
+
+      // Venues Rated
+      const { count: venuesCount } = await supabase
+        .from("venue_reviews")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id);
+      setVenuesRated(venuesCount || 0);
+    } catch (error) {
+      console.error("Error fetching home data:", error);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
   const handlePanicPress = () => {
     router.push("/log");
   };
 
   const onRefresh = async () => {
     setRefreshing(true);
-    // TODO: Fetch latest data from Supabase
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await fetchData();
     setRefreshing(false);
+  };
+
+  const formatDuration = (seconds: number) => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m}m`;
   };
 
   return (
@@ -67,22 +153,22 @@ export default function HomeScreen() {
         <View style={styles.statsGrid}>
           <View style={styles.statCard}>
             <Text style={styles.statEmoji}>⏱</Text>
-            <Text style={styles.statValue}>0h 0m</Text>
+            <Text style={styles.statValue}>{formatDuration(totalTime)}</Text>
             <Text style={styles.statLabel}>Total Throne Time</Text>
           </View>
           <View style={styles.statCard}>
             <Text style={styles.statEmoji}>📊</Text>
-            <Text style={styles.statValue}>--</Text>
+            <Text style={styles.statValue}>{avgBristol}</Text>
             <Text style={styles.statLabel}>Avg Bristol</Text>
           </View>
           <View style={styles.statCard}>
             <Text style={styles.statEmoji}>🏆</Text>
-            <Text style={styles.statValue}>0</Text>
+            <Text style={styles.statValue}>{achievementCount}</Text>
             <Text style={styles.statLabel}>Achievements</Text>
           </View>
           <View style={styles.statCard}>
             <Text style={styles.statEmoji}>📍</Text>
-            <Text style={styles.statValue}>0</Text>
+            <Text style={styles.statValue}>{venuesRated}</Text>
             <Text style={styles.statLabel}>Venues Rated</Text>
           </View>
         </View>
