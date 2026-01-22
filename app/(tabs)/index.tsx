@@ -6,6 +6,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from "react-native";
 
@@ -84,6 +85,27 @@ export default function HomeScreen() {
             <Text style={styles.statValue}>0</Text>
             <Text style={styles.statLabel}>Venues Rated</Text>
           </View>
+        </View>
+      </View>
+
+      {/* Quick Actions */}
+      <View style={styles.quickActions}>
+        <Text style={styles.sectionTitle}>Quick Actions</Text>
+        <View style={styles.actionsRow}>
+          <TouchableOpacity
+            style={styles.actionCard}
+            onPress={() => router.push("/achievements")}
+          >
+            <Text style={styles.actionEmoji}>🏆</Text>
+            <Text style={styles.actionText}>Achievements</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.actionCard}
+            onPress={() => router.push("/monthly-report")}
+          >
+            <Text style={styles.actionEmoji}>📊</Text>
+            <Text style={styles.actionText}>Monthly Report</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -215,5 +237,33 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#2E7D32",
     lineHeight: 20,
+  },
+  quickActions: {
+    marginBottom: 24,
+  },
+  actionsRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  actionCard: {
+    flex: 1,
+    backgroundColor: "#8B5A2B",
+    padding: 20,
+    borderRadius: 16,
+    alignItems: "center",
+    shadowColor: "#4A3728",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  actionEmoji: {
+    fontSize: 32,
+    marginBottom: 8,
+  },
+  actionText: {
+    fontSize: 14,
+    fontWeight: "bold",
+    color: "white",
   },
 });

@@ -56,6 +56,24 @@ function RootLayoutNav() {
     <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="achievements"
+          options={{
+            headerTitle: "🏆 Achievements",
+            headerStyle: { backgroundColor: "#FFFAF5" },
+            headerTintColor: "#4A3728",
+            presentation: "modal",
+          }}
+        />
+        <Stack.Screen
+          name="monthly-report"
+          options={{
+            headerTitle: "📊 Monthly Report",
+            headerStyle: { backgroundColor: "#FFFAF5" },
+            headerTintColor: "#4A3728",
+            presentation: "modal",
+          }}
+        />
       </Stack>
     </ThemeProvider>
   );
