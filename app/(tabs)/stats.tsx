@@ -4,18 +4,21 @@ import { Dimensions, ScrollView, StyleSheet, Text, View } from "react-native";
 
 const { width } = Dimensions.get("window");
 
+import { supabase } from "@/lib/supabase";
+
 export default function StatsScreen() {
-  // Mock data - will be replaced with Supabase data
-  const [stats] = useState({
-    totalLogs: 42,
-    totalDuration: 7200, // seconds
-    avgDuration: 171, // seconds
-    avgBristol: 4.2,
-    currentStreak: 7,
-    longestStreak: 14,
-    thisMonthLogs: 15,
-    lastMonthLogs: 18,
+  const [stats, setStats] = useState({
+    totalLogs: 0,
+    totalDuration: 0,
+    avgDuration: 0,
+    avgBristol: 0,
+    currentStreak: 0,
+    longestStreak: 0,
+    thisMonthLogs: 0,
+    lastMonthLogs: 0,
   });
+
+  const [loading, setLoading] = useState(true);
 
   const formatDuration = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
@@ -26,25 +29,140 @@ export default function StatsScreen() {
     return `${mins}m`;
   };
 
-  // Time of day distribution (mock data)
-  const timeDistribution = [
-    { time: "Morning", count: 12, emoji: "🌅" },
-    { time: "Afternoon", count: 8, emoji: "☀️" },
-    { time: "Evening", count: 15, emoji: "🌆" },
-    { time: "Night", count: 7, emoji: "🌙" },
-  ];
+  // Time of day distribution
+  const [timeDistribution, setTimeDistribution] = useState([
+    { time: "Morning", count: 0, emoji: "🌅" },
+    { time: "Afternoon", count: 0, emoji: "☀️" },
+    { time: "Evening", count: 0, emoji: "🌆" },
+    { time: "Night", count: 0, emoji: "🌙" },
+  ]);
 
-  // Bristol type distribution (mock)
-  const bristolDistribution = [
-    { type: 1, count: 2 },
-    { type: 2, count: 5 },
-    { type: 3, count: 8 },
-    { type: 4, count: 18 },
-    { type: 5, count: 6 },
-    { type: 6, count: 2 },
-    { type: 7, count: 1 },
-  ];
-  const maxBristolCount = Math.max(...bristolDistribution.map((b) => b.count));
+  // Bristol type distribution
+  const [bristolDistribution, setBristolDistribution] = useState([
+    { type: 1, count: 0 },
+    { type: 2, count: 0 },
+    { type: 3, count: 0 },
+    { type: 4, count: 0 },
+    { type: 5, count: 0 },
+    { type: 6, count: 0 },
+    { type: 7, count: 0 },
+  ]);
+
+  const maxBristolCount =
+    Math.max(...bristolDistribution.map((b) => b.count)) || 1;
+
+  const fetchStatsData = async () => {
+    try {
+      setLoading(true);
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // 1. Fetch Logs
+      const { data: logs, error } = await supabase
+        .from("poop_logs")
+        .select("logged_at, duration_seconds, bristol_type")
+        .eq("user_id", user.id);
+
+      if (error) throw error;
+
+      if (logs && logs.length > 0) {
+        // Calculate Totals & Averages
+        const totalLogs = logs.length;
+        const totalDuration = logs.reduce(
+          (sum, log) => sum + (log.duration_seconds || 0),
+          0,
+        );
+        const avgDuration = totalDuration / totalLogs;
+        const avgBristol =
+          logs.reduce((sum, log) => sum + (log.bristol_type || 0), 0) /
+          totalLogs;
+
+        // Calculate Monthly Counts
+        const now = new Date();
+        const currentMonth = now.getMonth();
+        const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+
+        let thisMonthCount = 0;
+        let lastMonthCount = 0;
+
+        // Distributions
+        const timeCounts = { Morning: 0, Afternoon: 0, Evening: 0, Night: 0 };
+        const bristolCounts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 };
+
+        logs.forEach((log) => {
+          const date = new Date(log.logged_at);
+          // Monthly
+          if (
+            date.getMonth() === currentMonth &&
+            date.getFullYear() === now.getFullYear()
+          ) {
+            thisMonthCount++;
+          } else if (date.getMonth() === lastMonth) {
+            lastMonthCount++;
+          }
+
+          // Bristol
+          if (log.bristol_type) {
+            bristolCounts[log.bristol_type as keyof typeof bristolCounts] =
+              (bristolCounts[log.bristol_type as keyof typeof bristolCounts] ||
+                0) + 1;
+          }
+
+          // Time of Day
+          const hour = date.getHours();
+          if (hour >= 5 && hour < 12) timeCounts.Morning++;
+          else if (hour >= 12 && hour < 17) timeCounts.Afternoon++;
+          else if (hour >= 17 && hour < 22) timeCounts.Evening++;
+          else timeCounts.Night++;
+        });
+
+        // 2. Fetch Streaks
+        const { data: streakData } = await supabase
+          .from("streaks")
+          .select("current_streak, longest_streak")
+          .eq("user_id", user.id)
+          .single();
+
+        setStats({
+          totalLogs,
+          totalDuration,
+          avgDuration,
+          avgBristol,
+          currentStreak: streakData?.current_streak || 0,
+          longestStreak: streakData?.longest_streak || 0,
+          thisMonthLogs: thisMonthCount,
+          lastMonthLogs: lastMonthCount,
+        });
+
+        setTimeDistribution([
+          { time: "Morning", count: timeCounts.Morning, emoji: "🌅" },
+          { time: "Afternoon", count: timeCounts.Afternoon, emoji: "☀️" },
+          { time: "Evening", count: timeCounts.Evening, emoji: "🌆" },
+          { time: "Night", count: timeCounts.Night, emoji: "🌙" },
+        ]);
+
+        setBristolDistribution([
+          { type: 1, count: bristolCounts[1] },
+          { type: 2, count: bristolCounts[2] },
+          { type: 3, count: bristolCounts[3] },
+          { type: 4, count: bristolCounts[4] },
+          { type: 5, count: bristolCounts[5] },
+          { type: 6, count: bristolCounts[6] },
+          { type: 7, count: bristolCounts[7] },
+        ]);
+      }
+    } catch (error) {
+      console.error("Error fetching stats:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchStatsData();
+  }, []);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>

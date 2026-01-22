@@ -3,6 +3,8 @@ import { ColorPicker } from "@/components/ColorPicker";
 import { PhotoCapture } from "@/components/PhotoCapture";
 import { SessionTimer } from "@/components/SessionTimer";
 import { VolumeSelector } from "@/components/VolumeSelector";
+import { uploadPhoto } from "@/lib/storage";
+import { supabase } from "@/lib/supabase";
 import { BristolType, COLOR_INFO, StoolColor, VolumeSize } from "@/types";
 import * as Haptics from "expo-haptics";
 import React, { useEffect, useRef, useState } from "react";
@@ -88,25 +90,84 @@ export default function LogScreen() {
     // Haptic feedback for successful flush
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-    const logData = {
-      bristol_type: bristolType,
-      volume,
-      color,
-      duration_seconds: elapsedSeconds,
-      notes,
-      is_public: isPublic,
-      poop_photo_url: poopPhoto,
-      toilet_photo_url: toiletPhoto,
-    };
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        Alert.alert("Error", "You must be logged in to save logs.");
+        return;
+      }
 
-    console.log("Submitting log:", logData);
+      let uploadedPoopUrl = null;
+      let uploadedToiletUrl = null;
 
-    // TODO: Submit to Supabase
-    // const { error } = await supabase.from('poop_logs').insert(logData);
+      // Upload photos if present
+      if (poopPhoto) {
+        uploadedPoopUrl = await uploadPhoto(poopPhoto, user.id, "poop");
+      }
+      if (toiletPhoto) {
+        uploadedToiletUrl = await uploadPhoto(toiletPhoto, user.id, "toilet");
+      }
 
-    Alert.alert("🚽 Flushed!", "Your log has been recorded successfully.", [
-      { text: "Great!", onPress: resetForm },
-    ]);
+      const logData = {
+        user_id: user.id,
+        bristol_type: bristolType,
+        volume,
+        color,
+        duration_seconds: elapsedSeconds,
+        notes,
+        is_public: isPublic,
+        poop_photo_url: uploadedPoopUrl,
+        toilet_photo_url: uploadedToiletUrl,
+        logged_at: new Date().toISOString(),
+      };
+
+      console.log("Submitting log:", logData);
+
+      const { error } = await supabase.from("poop_logs").insert(logData);
+
+      if (error) throw error;
+
+      // Check for Streak update
+      const today = new Date().toISOString().split("T")[0];
+      const { data: streak } = await supabase
+        .from("streaks")
+        .select("*")
+        .eq("user_id", user.id)
+        .single();
+
+      if (streak) {
+        if (streak.last_log_date !== today) {
+          // Logic for streak counting would be more complex (consecutive days), simplified for now
+          // Just increment for demo purposes if not logged today
+          const { error: streakError } = await supabase
+            .from("streaks")
+            .update({
+              current_streak: streak.current_streak + 1,
+              last_log_date: today,
+            })
+            .eq("user_id", user.id);
+        }
+      } else {
+        // Create initial streak record via trigger or manual insert if trigger fails
+        // Our schema has a trigger for new *user* but handling existing users?
+        // Insert if missing
+        await supabase.from("streaks").upsert({
+          user_id: user.id,
+          current_streak: 1,
+          last_log_date: today,
+          longest_streak: 1,
+        });
+      }
+
+      Alert.alert("🚽 Flushed!", "Your log has been recorded successfully.", [
+        { text: "Great!", onPress: resetForm },
+      ]);
+    } catch (error) {
+      console.error("Submission error:", error);
+      Alert.alert("Error", "Failed to save your log. Please try again.");
+    }
   };
 
   const resetForm = () => {

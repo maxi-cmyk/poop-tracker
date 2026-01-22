@@ -29,90 +29,111 @@ interface Friend {
   isOnline: boolean;
 }
 
+import { supabase } from "@/lib/supabase";
+
 export default function SocialScreen() {
   const [activeTab, setActiveTab] = useState<
     "feed" | "leaderboard" | "friends"
   >("feed");
   const [privacyMode, setPrivacyMode] = useState(true);
+  const [loading, setLoading] = useState(false);
 
-  // Mock data
-  const [feedItems] = useState<FeedItem[]>([
-    {
-      id: "1",
-      username: "john_doe",
-      pooDonym: "The Duke",
-      avatar: "👨",
-      bristolType: 4,
-      volume: "medium",
-      duration: 180,
-      loggedAt: "10 mins ago",
-      hasPoop: true,
-    },
-    {
-      id: "2",
-      username: "jane_smith",
-      pooDonym: "Queen of Thrones",
-      avatar: "👩",
-      bristolType: 3,
-      volume: "large",
-      duration: 420,
-      loggedAt: "1 hour ago",
-      hasPoop: false,
-    },
-    {
-      id: "3",
-      username: "bob_wilson",
-      pooDonym: "Sir Logs-a-Lot",
-      avatar: "🧔",
-      bristolType: 5,
-      volume: "small",
-      duration: 60,
-      loggedAt: "2 hours ago",
-      hasPoop: true,
-    },
-  ]);
+  const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
+  const [friends, setFriends] = useState<Friend[]>([]);
 
-  const [friends] = useState<Friend[]>([
-    {
-      id: "1",
-      username: "john_doe",
-      pooDonym: "The Duke",
-      streak: 14,
-      isOnline: true,
-    },
-    {
-      id: "2",
-      username: "jane_smith",
-      pooDonym: "Queen of Thrones",
-      streak: 7,
-      isOnline: false,
-    },
-    {
-      id: "3",
-      username: "bob_wilson",
-      pooDonym: "Sir Logs-a-Lot",
-      streak: 23,
-      isOnline: true,
-    },
-  ]);
+  interface LeaderboardEntry {
+    rank: number;
+    name: string;
+    time?: string;
+    count?: number;
+    emoji: string;
+  }
 
-  const leaderboards = {
-    sprinter: [
-      { rank: 1, name: "SpeedyGonzales", time: "0:42", emoji: "⚡" },
-      { rank: 2, name: "QuickDraw", time: "0:58", emoji: "🏃" },
-      { rank: 3, name: "FlashPoop", time: "1:05", emoji: "💨" },
-    ],
-    marathoner: [
-      { rank: 1, name: "PhilosoPher", time: "2h 15m", emoji: "📚" },
-      { rank: 2, name: "DeepThinker", time: "1h 45m", emoji: "🤔" },
-      { rank: 3, name: "ZenMaster", time: "1h 30m", emoji: "🧘" },
-    ],
-    heavyweight: [
-      { rank: 1, name: "MegaLoad", count: 156, emoji: "🪵" },
-      { rank: 2, name: "BigBoi", count: 134, emoji: "💪" },
-      { rank: 3, name: "ChunkMaster", count: 98, emoji: "🏋️" },
-    ],
+  const [leaderboards, setLeaderboards] = useState<{
+    sprinter: LeaderboardEntry[];
+    marathoner: LeaderboardEntry[];
+    heavyweight: LeaderboardEntry[];
+  }>({
+    sprinter: [],
+    marathoner: [],
+    heavyweight: [],
+  });
+
+  const fetchSocialData = async () => {
+    try {
+      setLoading(true);
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // 1. Fetch Feed (Public logs from everyone for now, or just friends if we had friendship logic fully working)
+      // For simplicity in this demo, fetching all public logs
+      const { data: logs, error: logsError } = await supabase
+        .from("poop_logs")
+        .select(
+          `
+          *,
+          profiles:user_id (username, poo_donym, avatar_url)
+        `,
+        )
+        .eq("is_public", true)
+        .order("logged_at", { ascending: false })
+        .limit(20);
+
+      if (logs) {
+        const formattedFeed = logs.map((log: any) => ({
+          id: log.id,
+          username: log.profiles?.username || "Anonymous",
+          pooDonym: log.profiles?.poo_donym || "Mystery Pooper",
+          avatar: log.profiles?.avatar_url || "👤",
+          bristolType: log.bristol_type,
+          volume: log.volume,
+          duration: log.duration_seconds,
+          loggedAt: new Date(log.logged_at).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+          hasPoop: !!log.poop_photo_url,
+        }));
+        setFeedItems(formattedFeed);
+      }
+
+      // 2. Fetch Friends/Profiles (Mocking online status/streak for now as we don't have realtime presence yet)
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("*")
+        .limit(10);
+      if (profiles) {
+        // Join with streaks
+        const formattedFriends = await Promise.all(
+          profiles.map(async (p) => {
+            const { data: streak } = await supabase
+              .from("streaks")
+              .select("current_streak")
+              .eq("user_id", p.id)
+              .single();
+            return {
+              id: p.id,
+              username: p.username || "user",
+              pooDonym: p.poo_donym || "Pooper",
+              streak: streak?.current_streak || 0,
+              isOnline: Math.random() > 0.7, // Mock online status
+            };
+          }),
+        );
+        setFriends(formattedFriends);
+      }
+    } catch (error) {
+      console.error("Error fetching social data", error);
+    } finally {
+      setLoading(false);
+    }
   };
+
+  React.useEffect(() => {
+    fetchSocialData();
+  }, [activeTab]);
 
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
