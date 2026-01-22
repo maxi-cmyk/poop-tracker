@@ -1,5 +1,4 @@
 -- PooPals Database Schema
--- Run this in your Supabase SQL Editor
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
