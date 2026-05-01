@@ -1,6 +1,6 @@
 # Tech Stack
 
-PooPals is a small product monorepo with an Expo React Native frontend and a Supabase/Postgres backend boundary. There is no custom API server in this repo; the mobile app talks directly to Supabase from `frontend/lib/`.
+PooPals is a small product monorepo with an Expo React Native frontend and a Supabase backend boundary. There is no custom API server in this repo; the mobile app talks directly to Supabase from `frontend/lib/`.
 
 ## Repository Shape
 
