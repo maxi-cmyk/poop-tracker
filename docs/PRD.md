@@ -214,6 +214,7 @@ Requirements:
 - Use a high-contrast dark map interface.
 - Calculate the fastest available pedestrian route to the nearest safe zone.
 - Initial implementation may use preloaded or pre-hardcoded safe zones for a test area.
+- Hackathon implementation should use Supabase-seeded SMU venue data when available, with a local fallback list and client-side Haversine filtering to a 700m maximum radius.
 - Production-grade implementation should support restroom data loaded from OpenStreetMap or Supabase.
 - Display route ETA, distance, and confidence of restroom availability.
 - Show an inline route calculation state.
@@ -528,8 +529,10 @@ Tactical Evacuation Mode requires reliable safe zone data.
 Requirements:
 
 - Initial release may use preloaded coordinates for a test area.
+- Hackathon release should seed SMU-area restroom venues in Supabase and calculate nearest safe zones in the Expo client using Haversine distance.
+- Keep local frontend fallback safe-zone data so Emergency Route works if Supabase or network access fails during judging.
 - Next release should support OpenStreetMap toilet data or curated Supabase venue records.
-- If using Supabase spatial queries, evaluate PostGIS for nearest-safe-zone lookup.
+- If using Supabase spatial queries in a later release, evaluate PostGIS for nearest-safe-zone lookup.
 - User location must be handled with clear permission states.
 
 ## 8. Non-Functional Requirements

@@ -333,6 +333,45 @@ Fix:
 - Health data is labeled clearly and never presented as a diagnosis.
 - UI controls remain usable with screen readers and system text scaling.
 
+## Hackathon Build Slice
+
+Build the hackathon slice for SMU and nearby restrooms within a 700m maximum radius, optimized for Expo Go judging and a web mobile-simulator presentation. Prioritize visible reliability: dark clinical UI, urgent route demo, safe log submission, privacy-correct social feed, and useful empty/loading/error states.
+
+### Scope
+
+In:
+
+- SMU-area hardcoded safe zones.
+- Supabase database tables and seed data for demo logs, venues, streaks, achievements, and social content.
+- 700m maximum restroom search radius.
+- Client-side Haversine distance filtering for the 700m SMU restroom radius.
+- Local safe-zone fallback data so Tactical Mode works if Supabase or network access fails during judging.
+- Expo Go-compatible flows.
+- Web simulator demo polish.
+
+Out:
+
+- PostGIS.
+- OpenStreetMap ingestion.
+- Push notifications.
+- AI photo classification.
+- Full offline sync.
+- Production private storage migration.
+
+### Action Items
+
+- [ ] Treat Phase 1 UX remediation as mandatory before new features.
+- [ ] Add Supabase seed data for SMU venues, demo logs, streaks, achievements, and social/feed rows; keep this in `backend/database/seed.sql` if a seed file is added.
+- [ ] Add SMU demo safe-zone fallback data in `frontend/app/(tabs)/map.tsx` or `frontend/lib/safeZones.ts`, capped to restrooms within 700m of the user or demo origin.
+- [ ] Make `PanicButton.tsx` the "Begin Urgent Session" / "Emergency Route" control and route directly from Home to Tactical Evacuation Mode in `map.tsx`.
+- [ ] Implement Tactical Evacuation Mode with nearest safe-zone selection, client-side Haversine distance calculation, ETA/distance, route calculating state, no-safe-zone state, permission denied state, API key missing state, retry, and cancel.
+- [ ] Fix `log.tsx` submission with `isSubmitting`, disabled submit, visible saving/success/error states, no duplicate taps, and success haptics only after persistence succeeds.
+- [ ] Add visible loading, empty, error, and retry states to `stats.tsx` and `social.tsx`; never show zeroed analytics as real data while loading.
+- [ ] Fix Social privacy by making per-card reveal work, keeping privacy mode default-on, removing random online state, and adding empty states for feed/friends/leaderboards.
+- [ ] Apply a fast dark clinical token pass through `Colors.ts`, tab layout, Home, Log, Stats, Map, Social, Achievements, and Monthly Report to remove brown/beige novelty styling from the first impression.
+- [ ] Add high-impact accessibility roles, labels, hints, and selected states to Panic, Bristol, Volume, Color, Photo, Map, Social, Home, and Log controls.
+- [ ] Validate specifically for Expo Go and presentation web: run TypeScript checks, start Expo, smoke test on Expo Go, then run `npm run web` and verify mobile-width layout for Home -> Emergency Route, Log submit, Stats empty/loading, and Social reveal.
+
 ### features we should add
 
 ## Functionality & Features
@@ -345,9 +384,9 @@ Fix:
 
 The User Experience: The PanicButton.tsx should be prominently placed—perhaps a floating action button accessible from anywhere in the app. When pressed, the UI instantly shifts to a high-contrast dark mode map. It calculates the fastest pedestrian route to the nearest restroom and begins aggressive, large-text turn-by-turn navigation.
 
-The Data Source: You will need a reliable source of public restrooms. You can extract data from OpenStreetMap (filtering for the amenity=toilets tag) covering a specific test area, like the SMU campus or the downtown core.
+The Data Source: For the hackathon, Supabase seed data plus a local fallback list is enough. Seed SMU-area public restroom venues and filter them to a 700m radius client-side. Future production work can extract restroom data from OpenStreetMap using the `amenity=toilets` tag.
 
-The Backend Execution: You will load this restroom data into your Supabase database and utilize the PostGIS extension. When the panic button is hit, the app sends the user's current GPS coordinates to Supabase, which instantly runs a spatial query to find the closest toilet within a specific radius, returning the coordinates for the map component to route to.
+The Backend Execution: For the hackathon, load demo restroom data into Supabase and calculate nearest venues in the Expo app with a Haversine distance helper. PostGIS spatial queries are a post-hackathon upgrade only if the venue dataset grows or server-side geospatial filtering becomes necessary.
 
 ## Predictive "Session" Forecasting (Analytics)
 
